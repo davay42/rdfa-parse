@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en" prefix="schema: http://schema.org/ dc: http://purl.org/dc/terms/ foaf: http://xmlns.com/foaf/0.1/">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RDFa Browser Parser - Self-Extracting Demo</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 1200px;
+      margin: 40px auto;
+      padding: 0 20px;
+      background: #f8fafc;
+    }
+
+    h1 {
+      color: #2563eb;
+      margin-bottom: 10px;
+    }
+
+    .subtitle {
+      color: #64748b;
+      margin-top: 0;
+    }
+
+    .demo-section {
+      background: white;
+      padding: 20px;
+      margin: 20px 0;
+      border-radius: 8px;
+      border-left: 4px solid #2563eb;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+
+    .demo-section h2 {
+      margin-top: 0;
+      color: #1e293b;
+      font-size: 18px;
+    }
+
+    .demo-section p {
+      margin: 10px 0;
+      line-height: 1.6;
+    }
+
+    .output {
+      background: #1e293b;
+      color: #e2e8f0;
+      padding: 15px;
+      border-radius: 4px;
+      font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+      font-size: 12px;
+      overflow-x: auto;
+      max-height: 500px;
+      overflow-y: auto;
+    }
+
+    .quad {
+      margin: 3px 0;
+      white-space: nowrap;
+    }
+
+    .subject {
+      color: #38bdf8;
+    }
+
+    .predicate {
+      color: #a78bfa;
+    }
+
+    .object {
+      color: #fbbf24;
+    }
+
+    .literal {
+      color: #86efac;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 15px;
+      margin: 20px 0;
+    }
+
+    .stat-box {
+      background: white;
+      padding: 15px;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+
+    .stat-value {
+      font-size: 32px;
+      font-weight: bold;
+      color: #2563eb;
+    }
+
+    .stat-label {
+      color: #64748b;
+      font-size: 14px;
+      margin-top: 5px;
+    }
+
+    code {
+      background: #e2e8f0;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 13px;
+      color: #1e293b;
+    }
+
+    .error {
+      background: #fef2f2;
+      border-left-color: #ef4444;
+      color: #991b1b;
+    }
+
+    .loading {
+      color: #64748b;
+      font-style: italic;
+    }
+  </style>
+</head>
+
+<body vocab="http://schema.org/">
+  <h1 property="dc:title">RDFa Browser Parser Demo</h1>
+  <p class="subtitle" property="dc:description">This page demonstrates the rdfa-browser parser by extracting RDFa
+    triples from its own HTML source code.</p>
+
+  <!-- Test 1: Basic vocabulary and typeof -->
+  <div class="demo-section" about="#jane" typeof="Person">
+    <h2>Test 1: Basic Person (vocab + typeof + property)</h2>
+    <p><strong>Name:</strong> <span property="name">Jane Doe</span></p>
+    <p><strong>Job:</strong> <span property="jobTitle">Software Engineer</span></p>
+    <p><strong>Email:</strong> <a property="email" href="mailto:jane@example.org">jane@example.org</a></p>
+  </div>
+
+  <!-- Test 2: Nested resources with chaining -->
+  <div class="demo-section" about="#john" typeof="Person">
+    <h2>Test 2: Nested Resources (chaining + blank nodes)</h2>
+    <p><span property="name">John Smith</span> works at
+      <span property="worksFor" typeof="Organization">
+        <span property="name">Acme Corp</span>
+      </span>
+    </p>
+  </div>
+
+  <!-- Test 3: CURIE prefixes -->
+  <div class="demo-section" prefix="ex: http://example.org/vocab# bibo: http://purl.org/ontology/bibo/">
+    <h2>Test 3: CURIE Syntax (prefix mappings)</h2>
+    <div about="urn:isbn:978-0-123456-78-9" typeof="bibo:Book">
+      <span property="dc:title">The Semantic Web</span> by
+      <span property="dc:creator">Tim Berners-Lee</span>
+    </div>
+  </div>
+
+  <!-- Test 4: @rel and @rev -->
+  <div class="demo-section">
+    <h2>Test 4: Relationships (@rel, @rev, @href)</h2>
+    <p about="#jane">Jane knows
+      <a rel="foaf:knows" href="#john">John</a> and is known by
+      <a rev="foaf:knows" href="#alice">Alice</a>
+    </p>
+  </div>
+
+  <!-- Test 5: Typed literals -->
+  <div class="demo-section" about="#event-2025" typeof="Event">
+    <h2>Test 5: Typed Literals (@datatype, @content)</h2>
+    <p><span property="name">Web Conference 2025</span></p>
+    <p>Date: <span property="startDate" content="2025-06-15" datatype="xsd:date">June 15, 2025</span></p>
+    <p>Attendees: <span property="attendeeCount" content="150" datatype="xsd:integer">150</span></p>
+  </div>
+
+  <!-- Test 6: Language tags -->
+  <div class="demo-section" about="#article-1" typeof="Article">
+    <h2>Test 6: Language Tags (@lang)</h2>
+    <p property="headline" lang="en">Semantic Web Technologies</p>
+    <p property="abstract" lang="es">Las tecnologías de la web semántica</p>
+    <p property="abstract" lang="fr">Technologies du web sémantique</p>
+  </div>
+
+  <!-- Test 7: @resource and @src -->
+  <div class="demo-section" about="#photo-1" typeof="ImageObject">
+    <h2>Test 7: Resources (@resource, @src)</h2>
+    <p>Photo by <span property="author" resource="#jane">Jane Doe</span></p>
+    <img property="contentUrl" src="https://example.org/photo.jpg" alt="Sample"
+      style="max-width: 200px; display: block; margin-top: 10px;">
+  </div>
+
+  <!-- Test 8: Multiple types -->
+  <div class="demo-section" about="#creative-person" typeof="Person CreativeWork">
+    <h2>Test 8: Multiple Types (space-separated)</h2>
+    <span property="name">Creative Jane</span>
+  </div>
+
+  <!-- Test 9: Empty @about for document -->
+  <div class="demo-section" about="">
+    <h2>Test 9: Document Metadata (@about="")</h2>
+    <p property="dc:modified" content="2025-01-15" datatype="xsd:date">Last modified: January 15, 2025</p>
+  </div>
+
+  <!-- Test 10: Incomplete triples (chaining) -->
+  <div class="demo-section" about="#jane">
+    <h2>Test 10: Incomplete Triples (chaining with @rel)</h2>
+    <p>Jane's friends:</p>
+    <ul>
+      <li rel="foaf:knows" typeof="Person"><span property="name">Bob</span></li>
+      <li rel="foaf:knows" typeof="Person"><span property="name">Carol</span></li>
+    </ul>
+  </div>
+
+  <!-- Output section -->
+  <div class="demo-section">
+    <h2>Extracted Quads</h2>
+    <div class="stats">
+      <div class="stat-box">
+        <div class="stat-value" id="quad-count">0</div>
+        <div class="stat-label">Total Quads</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value" id="subject-count">0</div>
+        <div class="stat-label">Unique Subjects</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value" id="predicate-count">0</div>
+        <div class="stat-label">Unique Predicates</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value" id="parse-time">0ms</div>
+        <div class="stat-label">Parse Time</div>
+      </div>
+    </div>
+    <div id="output" class="output loading">Parsing...</div>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "htmlparser2": "https://cdn.jsdelivr.net/npm/htmlparser2@9.1.0/+esm",
+      "rdfa-browser": "./index.js"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import { parseRDFa } from 'rdfa-browser';
+
+    function formatTerm(term) {
+      if (!term || !term.termType) return 'null';
+
+      try {
+        if (term.termType === 'NamedNode') {
+          const val = term.value || '';
+          const short = val.length > 50 ? '...' + val.slice(-47) : val;
+          return `<span class="subject">&lt;${escapeHtml(short)}&gt;</span>`;
+        }
+
+        if (term.termType === 'BlankNode') {
+          return `<span class="subject">_:${escapeHtml(term.value || 'blank')}</span>`;
+        }
+
+        if (term.termType === 'Literal') {
+          const val = (term.value || '').toString();
+          const escaped = escapeHtml(val.length > 80 ? val.slice(0, 77) + '...' : val);
+          let lit = `<span class="literal">"${escaped}"</span>`;
+
+          if (term.language) {
+            lit += `<span style="color: #fbbf24;">@${escapeHtml(term.language)}</span>`;
+          } else if (term.datatype?.value && term.datatype.value !== 'http://www.w3.org/2001/XMLSchema#string') {
+            const dtValue = term.datatype.value || '';
+            // Show short form for common XSD types, full URI for others
+            let dtDisplay;
+            if (dtValue.startsWith('http://www.w3.org/2001/XMLSchema#')) {
+              dtDisplay = 'xsd:' + dtValue.substring(33);
+            } else {
+              dtDisplay = '&lt;' + dtValue + '&gt;';
+            }
+            lit += `<span style="color: #c084fc;">^^${dtDisplay}</span>`;
+          }
+          return lit;
+        }
+
+        return `<span style="color: #94a3b8;">${escapeHtml(term.termType)}</span>`;
+      } catch (e) {
+        console.error('Format error:', e, term);
+        return '<span style="color: #ef4444;">error</span>';
+      }
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    async function extractAndDisplay() {
+      const output = document.getElementById('output');
+
+      try {
+        const startTime = performance.now();
+
+        // Get the HTML source of this document
+        const html = document.documentElement.outerHTML;
+
+        // Parse with rdfa-browser
+        const quads = parseRDFa(html, {
+          baseIRI: window.location.href,
+          profile: 'html'
+        });
+
+        const parseTime = (performance.now() - startTime).toFixed(2);
+
+        // Update stats
+        if (quads.length === 0) {
+          output.innerHTML = '<div style="color: #fbbf24;">⚠️ No quads extracted. Check parser implementation.</div>';
+          return;
+        }
+
+        // Calculate stats
+        const subjects = new Set();
+        const predicates = new Set();
+
+        quads.forEach(q => {
+          if (q.subject?.value) subjects.add(q.subject.value);
+          if (q.predicate?.value) predicates.add(q.predicate.value);
+        });
+
+        document.getElementById('quad-count').textContent = quads.length;
+        document.getElementById('subject-count').textContent = subjects.size;
+        document.getElementById('predicate-count').textContent = predicates.size;
+        document.getElementById('parse-time').textContent = parseTime + 'ms';
+
+        // Format and display quads
+        const quadHtml = quads.map((q, i) => {
+          try {
+            const s = formatTerm(q.subject);
+            const p = formatTerm(q.predicate);
+            const o = formatTerm(q.object);
+            return `<div class="quad">${s} <span class="predicate">${p}</span> ${o} .</div>`;
+          } catch (e) {
+            console.error('Quad format error:', e, q);
+            return `<div class="quad" style="color: #ef4444;">Error formatting quad ${i}</div>`;
+          }
+        }).join('');
+
+        output.innerHTML = quadHtml || '<div style="color: #fbbf24;">No output generated</div>';
+
+      } catch (error) {
+        console.error('Extraction error:', error);
+        output.innerHTML = `<div style="color: #ef4444;">❌ Error: ${escapeHtml(error.message)}</div>`;
+        output.innerHTML += `<div style="color: #94a3b8; margin-top: 10px; font-size: 11px;">${escapeHtml(error.stack || '')}</div>`;
+      }
+    }
+
+    // Run extraction when page loads
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', extractAndDisplay);
+    } else {
+      // DOM already loaded
+      setTimeout(extractAndDisplay, 100);
+    }
+  </script>
+</body>
+
+</html>

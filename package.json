@@ -1,0 +1,38 @@
+{
+  "name": "rdfa-browser",
+  "version": "1.0.0",
+  "description": "A lightweight, browser-native RDFa 1.1 parser with N3.js compatibility. Designed for web-workers and modern web applications without Node.js dependencies. Supports full RDFa Core 1.1 spec including CURIE expansion, vocabulary handling, and streaming quad output.",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "keywords": [
+    "rdfa",
+    "rdf",
+    "semantic-web",
+    "linked-data",
+    "n3",
+    "rdfjs",
+    "browser",
+    "web-worker",
+    "parser",
+    "streaming"
+  ],
+  "dependencies": {
+    "htmlparser2": "^9.1.0"
+  },
+  "peerDependencies": {
+    "n3": "^1.17.0"
+  },
+  "author": "Your Name",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/rdfa-browser.git"
+  },
+  "homepage": "https://github.com/yourusername/rdfa-browser#readme",
+  "bugs": {
+    "url": "https://github.com/yourusername/rdfa-browser/issues"
+  }
+}
