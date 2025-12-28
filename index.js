@@ -346,6 +346,28 @@ export class RDFaParser {
       types.forEach(type => this.emitQuad(currentSubject, rdfType, type));
     }
 
+    // Handle @property + @typeof where @property creates a link from parent to this new resource
+    // Only if we are NOT completing an incomplete triple (which would imply this element IS the object, 
+    // and properties on it likely describe IT, not the link to it).
+    const parentHasIncomplete = parent && parent.incomplete && parent.incomplete.length > 0;
+    const hasLiteralIndicators = attrs.content !== undefined || attrs.datatype !== undefined;
+    const hasResourceIndicators = attrs.resource !== undefined || attrs.href !== undefined || attrs.src !== undefined;
+    let propertyEmittedAsLink = false;
+
+    if (attrs.property !== undefined && attrs.typeof !== undefined && parent && parent.currentSubject && newSubject &&
+      !hasLiteralIndicators && !hasResourceIndicators && !parentHasIncomplete) {
+
+      const properties = this.parseList(attrs.property, context, true);
+      properties.forEach(prop => {
+        if (inlist) {
+          this.addToList(parent.currentSubject, prop, newSubject);
+        } else {
+          this.emitQuad(parent.currentSubject, prop, newSubject);
+        }
+      });
+      propertyEmittedAsLink = true;
+    }
+
     // Process @rel and @rev
     let incomplete = [];
 
@@ -459,7 +481,8 @@ export class RDFaParser {
       vocab: context.vocab,
       language: context.language,
       text: '',
-      propertyProcessedFromParent
+      propertyProcessedFromParent,
+      propertyEmittedAsLink // <--- ADD THIS
     });
   }
 
@@ -520,7 +543,7 @@ export class RDFaParser {
       const hasResourceIndicators = attrs.resource !== undefined || attrs.href !== undefined || attrs.src !== undefined;
 
       // Skip if @property + @typeof was already processed in onTagOpen (resource case)
-      if (hasTypeof && !hasLiteralIndicators && !hasResourceIndicators) {
+      if (context.propertyEmittedAsLink) {
         return;
       }
 
