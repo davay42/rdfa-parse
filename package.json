@@ -1,5 +1,5 @@
 {
-  "name": "rdfa-browser",
+  "name": "rdfa-parse",
   "version": "1.0.0",
   "description": "A lightweight, browser-native RDFa 1.1 parser with N3.js compatibility. Designed for web-workers and modern web applications without Node.js dependencies. Supports full RDFa Core 1.1 spec including CURIE expansion, vocabulary handling, and streaming quad output.",
   "type": "module",
@@ -7,6 +7,9 @@
   "exports": {
     ".": "./index.js"
   },
+  "files": [
+    "index.js"
+  ],
   "keywords": [
     "rdfa",
     "rdf",

@@ -194,9 +194,9 @@
         <p property="name">Chocolate Cake</p>
         <p>Ingredients:</p>
         <ul rel="recipeIngredient" inlist="">
-          <li><span about="#ing1">Flour</span></li>
-          <li><span about="#ing2">Sugar</span></li>
-          <li><span about="#ing3">Cocoa</span></li>
+          <li><span about="#ing1" property="name">Flour</span></li>
+          <li><span about="#ing2" property="name">Sugar</span></li>
+          <li><span about="#ing3" property="name">Cocoa</span></li>
         </ul>
       </div>
 
@@ -291,13 +291,13 @@
   {
     "imports": {
       "htmlparser2": "https://cdn.jsdelivr.net/npm/htmlparser2@10.0.0/+esm",
-      "rdfa-browser": "./index.js"
+      "rdfa-parse": "./index.js"
     }
   }
   </script>
 
   <script type="module">
-    import { parseRDFa } from 'rdfa-browser';
+    import { parseRDFa } from 'rdfa-parse';
 
     function escapeHtml(text) {
       const div = document.createElement('div');
