@@ -131,11 +131,19 @@ export class RDFaParser {
     const trimmed = term.trim();
     if (!trimmed) return null;
 
+    // Remove Safe CURIE brackets if present
+    let processedTerm = trimmed;
+    let isSafeCURIE = false;
+    if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+      processedTerm = trimmed.slice(1, -1);
+      isSafeCURIE = true;
+    }
+
     // Check if it contains a colon
-    if (trimmed.includes(':')) {
-      const colonIdx = trimmed.indexOf(':');
-      const prefix = trimmed.substring(0, colonIdx);
-      const reference = trimmed.substring(colonIdx + 1);
+    if (processedTerm.includes(':')) {
+      const colonIdx = processedTerm.indexOf(':');
+      const prefix = processedTerm.substring(0, colonIdx);
+      const reference = processedTerm.substring(colonIdx + 1);
 
       // Special case: _:blanknode
       if (prefix === '_') return null;
@@ -147,15 +155,15 @@ export class RDFaParser {
 
       // Check if it's actually an absolute IRI (e.g., http://...)
       if (/^[a-z][a-z0-9+.-]*$/i.test(prefix)) {
-        return trimmed; // It's an absolute IRI
+        return processedTerm; // It's an absolute IRI
       }
 
       return null; // Unknown prefix
     }
 
-    // Plain term - use vocabulary
+    // Plain term - use vocabulary (but only if not in Safe CURIE context that requires prefix)
     const vocab = context.vocab || this.options.vocab;
-    return vocab ? vocab + trimmed : null;
+    return vocab ? vocab + processedTerm : null;
   }
 
   resolveResourceOrIRI(value, context, allowTerm = true) {
@@ -202,9 +210,27 @@ export class RDFaParser {
   onTagOpen(name, attrs) {
     const parent = this.stack[this.stack.length - 1];
 
+    // Handle <base> tag to update global baseIRI
+    if (name === 'base' && attrs.href) {
+      const resolved = this.resolveIRI(attrs.href, this.options.baseIRI);
+      if (resolved) {
+        this.options.baseIRI = resolved;
+      }
+    }
+
     // Build context inheriting from parent
+    let base = parent?.base || this.options.baseIRI;
+
+    // Handle xml:base attribute for local base IRI override
+    if (attrs['xml:base']) {
+      const resolved = this.resolveIRI(attrs['xml:base'], base);
+      if (resolved) {
+        base = resolved;
+      }
+    }
+
     const context = {
-      base: parent?.base || this.options.baseIRI,
+      base,
       prefixes: { ...DEFAULT_PREFIXES, ...(parent?.prefixes || {}) },
       vocab: parent?.vocab ?? this.options.vocab,
       language: parent?.language || this.options.language
@@ -231,6 +257,10 @@ export class RDFaParser {
       attrs.rev !== undefined || attrs.resource !== undefined ||
       attrs.href !== undefined || attrs.src !== undefined;
 
+    // Check if this is a <time> tag without explicit datatype
+    const isTimeTag = name === 'time';
+    const implicitTimeDatatype = isTimeTag && attrs.datatype === undefined;
+
     let newSubject = null;
     let currentObject = null;
     let skipElement = false;
@@ -244,6 +274,11 @@ export class RDFaParser {
         newSubject = this.df.namedNode(context.base || '');
       } else if (aboutValue.startsWith('_:')) {
         newSubject = this.df.blankNode(aboutValue.substring(2));
+      } else if (aboutValue.startsWith('[') && aboutValue.endsWith(']')) {
+        // Safe CURIE - resolve as term/CURIE
+        const safeCURIE = aboutValue.slice(1, -1);
+        const resolved = this.resolveTerm(safeCURIE, context);
+        newSubject = resolved ? this.df.namedNode(resolved) : null;
       } else {
         // Direct IRI resolution (no vocab/term expansion)
         const resolved = this.resolveIRI(aboutValue, context.base);
@@ -258,14 +293,35 @@ export class RDFaParser {
         newSubject = parent.incomplete[0].pendingObject;
         reusesPendingObject = true;
       } else if (attrs.resource !== undefined) {
-        const resolved = this.resolveIRI(attrs.resource, context.base);
+        const resourceValue = attrs.resource.trim();
+        let resolved = null;
+        if (resourceValue.startsWith('[') && resourceValue.endsWith(']')) {
+          const safeCURIE = resourceValue.slice(1, -1);
+          resolved = this.resolveTerm(safeCURIE, context);
+        } else {
+          resolved = this.resolveIRI(resourceValue, context.base);
+        }
         newSubject = resolved ? this.df.namedNode(resolved) : null;
       } else if (attrs.href !== undefined) {
-        const iri = this.resolveIRI(attrs.href, context.base);
-        newSubject = iri ? this.df.namedNode(iri) : null;
+        const hrefValue = attrs.href.trim();
+        let resolved = null;
+        if (hrefValue.startsWith('[') && hrefValue.endsWith(']')) {
+          const safeCURIE = hrefValue.slice(1, -1);
+          resolved = this.resolveTerm(safeCURIE, context);
+        } else {
+          resolved = this.resolveIRI(hrefValue, context.base);
+        }
+        newSubject = resolved ? this.df.namedNode(resolved) : null;
       } else if (attrs.src !== undefined) {
-        const iri = this.resolveIRI(attrs.src, context.base);
-        newSubject = iri ? this.df.namedNode(iri) : null;
+        const srcValue = attrs.src.trim();
+        let resolved = null;
+        if (srcValue.startsWith('[') && srcValue.endsWith(']')) {
+          const safeCURIE = srcValue.slice(1, -1);
+          resolved = this.resolveTerm(safeCURIE, context);
+        } else {
+          resolved = this.resolveIRI(srcValue, context.base);
+        }
+        newSubject = resolved ? this.df.namedNode(resolved) : null;
       }
 
       if (!newSubject) {
@@ -286,14 +342,35 @@ export class RDFaParser {
         if (parent?.incomplete?.length > 0 && parent.incomplete[0]?.pendingObject) {
           newSubject = parent.incomplete[0].pendingObject;
         } else if (attrs.resource !== undefined) {
-          const resolved = this.resolveIRI(attrs.resource, context.base);
+          const resourceValue = attrs.resource.trim();
+          let resolved = null;
+          if (resourceValue.startsWith('[') && resourceValue.endsWith(']')) {
+            const safeCURIE = resourceValue.slice(1, -1);
+            resolved = this.resolveTerm(safeCURIE, context);
+          } else {
+            resolved = this.resolveIRI(resourceValue, context.base);
+          }
           newSubject = resolved ? this.df.namedNode(resolved) : null;
         } else if (attrs.href !== undefined) {
-          const iri = this.resolveIRI(attrs.href, context.base);
-          newSubject = iri ? this.df.namedNode(iri) : null;
+          const hrefValue = attrs.href.trim();
+          let resolved = null;
+          if (hrefValue.startsWith('[') && hrefValue.endsWith(']')) {
+            const safeCURIE = hrefValue.slice(1, -1);
+            resolved = this.resolveTerm(safeCURIE, context);
+          } else {
+            resolved = this.resolveIRI(hrefValue, context.base);
+          }
+          newSubject = resolved ? this.df.namedNode(resolved) : null;
         } else if (attrs.src !== undefined) {
-          const iri = this.resolveIRI(attrs.src, context.base);
-          newSubject = iri ? this.df.namedNode(iri) : null;
+          const srcValue = attrs.src.trim();
+          let resolved = null;
+          if (srcValue.startsWith('[') && srcValue.endsWith(']')) {
+            const safeCURIE = srcValue.slice(1, -1);
+            resolved = this.resolveTerm(safeCURIE, context);
+          } else {
+            resolved = this.resolveIRI(srcValue, context.base);
+          }
+          newSubject = resolved ? this.df.namedNode(resolved) : null;
         }
 
         // If still no subject, create a blank node
@@ -335,14 +412,35 @@ export class RDFaParser {
     if ((attrs.rel !== undefined || attrs.rev !== undefined) && relSubject) {
       // Determine the object for @rel/@rev
       if (attrs.resource !== undefined) {
-        const resolved = this.resolveIRI(attrs.resource, context.base);
+        const resourceValue = attrs.resource.trim();
+        let resolved = null;
+        if (resourceValue.startsWith('[') && resourceValue.endsWith(']')) {
+          const safeCURIE = resourceValue.slice(1, -1);
+          resolved = this.resolveTerm(safeCURIE, context);
+        } else {
+          resolved = this.resolveIRI(resourceValue, context.base);
+        }
         relObject = resolved ? this.df.namedNode(resolved) : null;
       } else if (attrs.href !== undefined) {
-        const iri = this.resolveIRI(attrs.href, context.base);
-        relObject = iri ? this.df.namedNode(iri) : null;
+        const hrefValue = attrs.href.trim();
+        let resolved = null;
+        if (hrefValue.startsWith('[') && hrefValue.endsWith(']')) {
+          const safeCURIE = hrefValue.slice(1, -1);
+          resolved = this.resolveTerm(safeCURIE, context);
+        } else {
+          resolved = this.resolveIRI(hrefValue, context.base);
+        }
+        relObject = resolved ? this.df.namedNode(resolved) : null;
       } else if (attrs.src !== undefined) {
-        const iri = this.resolveIRI(attrs.src, context.base);
-        relObject = iri ? this.df.namedNode(iri) : null;
+        const srcValue = attrs.src.trim();
+        let resolved = null;
+        if (srcValue.startsWith('[') && srcValue.endsWith(']')) {
+          const safeCURIE = srcValue.slice(1, -1);
+          resolved = this.resolveTerm(safeCURIE, context);
+        } else {
+          resolved = this.resolveIRI(srcValue, context.base);
+        }
+        relObject = resolved ? this.df.namedNode(resolved) : null;
       }
 
       // Special case: @rel + @typeof on same element with no explicit object
@@ -421,6 +519,7 @@ export class RDFaParser {
       pendingObject,
       reusesPendingObject,
       skipElement,
+      implicitTimeDatatype,
       base: context.base,
       prefixes: context.prefixes,
       vocab: context.vocab,
@@ -433,7 +532,7 @@ export class RDFaParser {
     const context = this.stack.pop();
     if (!context || context.name !== name) return;
 
-    const { attrs, currentSubject, text, language, currentObject } = context;
+    const { attrs, currentSubject, text, language, currentObject, implicitTimeDatatype } = context;
 
     // Step 9: Process @property
     // Skip if @property + @typeof was already handled in onTagOpen (Step 8.5)
@@ -444,14 +543,35 @@ export class RDFaParser {
       // Determine object value
       // Priority: @resource > @href > @src > currentObject (for chaining) > literal
       if (attrs.resource !== undefined) {
-        const resolved = this.resolveIRI(attrs.resource, context.base);
+        const resourceValue = attrs.resource.trim();
+        let resolved = null;
+        if (resourceValue.startsWith('[') && resourceValue.endsWith(']')) {
+          const safeCURIE = resourceValue.slice(1, -1);
+          resolved = this.resolveTerm(safeCURIE, context);
+        } else {
+          resolved = this.resolveIRI(resourceValue, context.base);
+        }
         object = resolved ? this.df.namedNode(resolved) : null;
       } else if (attrs.href !== undefined) {
-        const iri = this.resolveIRI(attrs.href, context.base);
-        object = iri ? this.df.namedNode(iri) : null;
+        const hrefValue = attrs.href.trim();
+        let resolved = null;
+        if (hrefValue.startsWith('[') && hrefValue.endsWith(']')) {
+          const safeCURIE = hrefValue.slice(1, -1);
+          resolved = this.resolveTerm(safeCURIE, context);
+        } else {
+          resolved = this.resolveIRI(hrefValue, context.base);
+        }
+        object = resolved ? this.df.namedNode(resolved) : null;
       } else if (attrs.src !== undefined) {
-        const iri = this.resolveIRI(attrs.src, context.base);
-        object = iri ? this.df.namedNode(iri) : null;
+        const srcValue = attrs.src.trim();
+        let resolved = null;
+        if (srcValue.startsWith('[') && srcValue.endsWith(']')) {
+          const safeCURIE = srcValue.slice(1, -1);
+          resolved = this.resolveTerm(safeCURIE, context);
+        } else {
+          resolved = this.resolveIRI(srcValue, context.base);
+        }
+        object = resolved ? this.df.namedNode(resolved) : null;
       } else if (currentObject) {
         // Use the currentObject from @rel/@rev in same element
         object = currentObject;
@@ -459,7 +579,10 @@ export class RDFaParser {
         // Literal value
         const content = attrs.content !== undefined ? attrs.content : text.trim();
 
-        if (attrs.datatype !== undefined) {
+        // Skip element: don't emit literal triples for elements with only whitespace
+        if (content === '' && attrs.content === undefined) {
+          object = null;
+        } else if (attrs.datatype !== undefined) {
           const dt = attrs.datatype.trim();
           if (dt === '') {
             // Empty datatype = plain literal
@@ -474,6 +597,10 @@ export class RDFaParser {
               object = this.df.literal(content);
             }
           }
+        } else if (implicitTimeDatatype) {
+          // Implicit xsd:dateTime for <time> tags without @datatype
+          const xsdDateTimeIRI = 'http://www.w3.org/2001/XMLSchema#dateTime';
+          object = this.df.literal(content, this.df.namedNode(xsdDateTimeIRI));
         } else if (language) {
           // Language-tagged literal
           object = this.df.literal(content, language);
