@@ -1,233 +1,261 @@
-# Final Production Readiness Review
-
-## ✅ EXPECTED OUTPUT (After Latest Fixes)
-
-Reload `demo.html` and verify you see exactly these patterns:
-
-### Test 1: Basic Person
-```turtle
-<http://localhost:5500/demo.html#jane> rdf:type schema:Person .
-<http://localhost:5500/demo.html#jane> schema:name "Jane Doe"@en .
-<http://localhost:5500/demo.html#jane> schema:jobTitle "Software Engineer"@en .
-<http://localhost:5500/demo.html#jane> schema:email <mailto:jane@example.org> .
-```
-**Verify:** Subject is `demo.html#jane` NOT `schema.org/#jane` ✓
-
-### Test 2: Chaining
-```turtle
-<http://localhost:5500/demo.html#john> rdf:type schema:Person .
-<http://localhost:5500/demo.html#john> schema:name "John Smith"@en .
-<http://localhost:5500/demo.html#john> schema:worksFor _:b0 .
-_:b0 rdf:type schema:Organization .
-_:b0 schema:name "Acme Corp"@en .
-```
-**Verify:** John has `worksFor _:b0`, NOT `_:b0 worksFor ""` ✓
-
-### Test 5: Typed Literals  
-```turtle
-<http://localhost:5500/demo.html#event-2025> schema:startDate "2025-06-15"^^xsd:date .
-<http://localhost:5500/demo.html#event-2025> schema:attendeeCount "150"^^xsd:integer .
-```
-**Verify:** Shows `^^xsd:date` and `^^xsd:integer` (not just `^^date`) ✓
-
-### Test 10: Incomplete Triples
-```turtle
-<http://localhost:5500/demo.html#jane> foaf:knows _:b1 .
-_:b1 rdf:type schema:Person .
-_:b1 schema:name "Bob"@en .
-<http://localhost:5500/demo.html#jane> foaf:knows _:b2 .
-_:b2 rdf:type schema:Person .
-_:b2 schema:name "Carol"@en .
-```
-**Verify:** Jane knows _:b1 and _:b2, NOT self-referencing ✓
+Below is a structured comparison of **demo.html** and your **extracted OUTPUT**, followed by concrete RDFa-spec deviations, parser bugs, and missing features. The focus is on correctness per RDFa 1.1 Core and explaining the **b3–b4 lost node problem**.
 
 ---
 
-## 🔍 MANUAL VALIDATION CHECKLIST
+## 1. Critical Bug: Test 13 “Deep Relationship Chaining” (b3–b4 issue)
 
-Run through each test:
+### Expected graph (from demo.html)
 
-### ❌ BUGS TO CHECK FOR (Should NOT appear):
+In **Test 13**:
 
-1. **Vocab Bleeding**
-   - ❌ `<http://schema.org/#jane>` 
-   - ✅ Should be: `<http://localhost:5500/demo.html#jane>`
-
-2. **Reversed Chaining**
-   - ❌ `_:b0 schema:worksFor ""`
-   - ✅ Should be: `<#john> schema:worksFor _:b0`
-
-3. **Self-Referencing**
-   - ❌ `#john foaf:knows #john`
-   - ❌ `_:b1 foaf:knows _:b1`
-   - ✅ Should be: `#jane foaf:knows #john` and `#jane foaf:knows _:b1`
-
-4. **Incomplete Datatype URIs**
-   - ❌ `"2025-06-15"^^date`
-   - ✅ Should be: `"2025-06-15"^^xsd:date` (displayed, full URI internally)
-
-5. **Wrong Property Subjects**
-   - ❌ `<mailto:...> schema:email <mailto:...>`
-   - ✅ Should be: `<#jane> schema:email <mailto:...>`
-
-6. **Missing Type Triples**
-   - Should see ~9 `rdf:type` triples
-   - Every `@typeof` should generate at least one type triple
-
-### ✅ FEATURES TO VERIFY WORKING:
-
-- [ ] All subjects resolve to correct URIs
-- [ ] All `@typeof` generate type triples  
-- [ ] Chaining works (nested resources)
-- [ ] Incomplete triples complete correctly
-- [ ] Datatypes fully qualified
-- [ ] Language tags applied
-- [ ] CURIEs expand properly
-- [ ] Multiple types work (Test 8)
-- [ ] Empty @about references document
-- [ ] No console errors
-
----
-
-## 📊 EXPECTED STATISTICS
-
-After all fixes, expect:
-- **Total Quads:** 37-40
-- **Unique Subjects:** 14-16
-- **Unique Predicates:** 15-18
-- **Parse Time:** < 5ms
-
----
-
-## 🔧 KEY IMPLEMENTATION FIXES
-
-### Fix #1: Subject Resolution
-**Problem:** `@about="#jane"` was resolving via vocab  
-**Solution:** Use `resolveIRI()` directly for @about, NOT `resolveTerm()`
-
-```javascript
-// WRONG:
-newSubject = this.resolveResourceOrIRI(attrs.about, context, true);
-
-// CORRECT:
-const resolved = this.resolveIRI(attrs.about, context.base);
-newSubject = resolved ? this.df.namedNode(resolved) : null;
+```html
+<div about="#library" typeof="schema:SoftwareSourceCode">
+  <div rel="schema:author">
+    <div typeof="schema:Person">
+      <span property="schema:name">Lead Dev</span>
+      <div rel="foaf:knows">
+        <div typeof="schema:Person">
+          <span property="schema:name">Contributor</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 ```
 
-### Fix #2: Chaining Direction
-**Problem:** `@property` with `@typeof` created reverse relationship  
-**Solution:** Check for `@typeof` to use `currentObject` as property object
+### Correct RDFa interpretation
 
-```javascript
-// When @property and @typeof together, property value is the typed resource
-else if (currentObject && attrs.typeof !== undefined) {
-  object = currentObject;
-}
+1. `#library schema:author _:bX`
+2. `_:bX rdf:type schema:Person`
+3. `_:bX schema:name "Lead Dev"`
+4. `_:bX foaf:knows _:bY`
+5. `_:bY rdf:type schema:Person`
+6. `_:bY schema:name "Contributor"`
+
+### Your OUTPUT
+
+```ttl
+<demo.html#library> schema:author _:b3 .
+
+_:b4 rdf:type schema:Person .
+_:b4 schema:name "Lead Dev"@en .
+_:b4 foaf:knows _:b5 .
+
+_:b6 rdf:type schema:Person .
+_:b6 schema:name "Contributor"@en .
 ```
 
-### Fix #3: Incomplete Triple Completion  
-**Problem:** Stored `currentObject` instead of parent `currentSubject`  
-**Solution:** Store parent's `subject` in incomplete triple record
+### What is wrong
 
-```javascript
-incomplete.push({ 
-  predicate: rel, 
-  direction: 'forward', 
-  subject: currentSubject  // Store parent subject, not currentObject
-});
+* `_:b3` is **never defined**
+* `_:b4` should be the object of `schema:author`, but is not linked
+* `_:b5` is referenced but never typed or named
+* `_:b6` is orphaned (should be object of `foaf:knows`)
+
+### Root cause
+
+Your parser **fails to propagate the “current object resource”** when:
+
+* `@rel` introduces a new object
+* followed by a descendant `@typeof`
+
+Per RDFa 1.1, `@rel` **creates a new incomplete triple**, and the *next typed element* completes it. You are generating **fresh blank nodes instead of reusing the pending one**.
+
+### Fix
+
+Maintain a **pendingObject stack**:
+
+* When encountering `rel=...` without `resource/about/href`
+
+  * allocate **one blank node**
+  * store it as the current object
+* The *first descendant with `@typeof` MUST reuse it*
+* Nested `rel` must chain from that same node
+
+---
+
+## 2. Incorrect handling of Safe CURIEs (Test 11)
+
+### Demo
+
+```html
+<div about="[schema:CreativeWork]" typeof="[schema:CreativeWork]">
 ```
 
-### Fix #4: Separate IRI vs Term Resolution
-**Problem:** All resources resolved via `resolveTerm()` (vocab expansion)  
-**Solution:** Use `resolveIRI()` for @about/@resource/@href/@src, `resolveTerm()` only for @property/@rel/@rev/@typeof
+### Output
 
----
-
-## 🚀 NPM PUBLICATION READINESS
-
-### ✅ Code Quality
-- [x] Zero console errors
-- [x] All edge cases handled
-- [x] Comprehensive error boundaries
-- [x] Memory safe (no leaks)
-- [x] Web worker compatible
-
-### ✅ Documentation
-- [x] README with all examples
-- [x] API documentation complete
-- [x] N3.js integration guide
-- [x] Web worker examples
-- [x] Error handling guide
-
-### ✅ Testing
-- [x] Self-validating demo
-- [x] All RDFa features covered
-- [x] Edge cases tested
-- [x] N3.js compatibility verified
-
-### ✅ Package Configuration
-- [x] package.json correct
-- [x] ESM exports configured
-- [x] Dependencies listed
-- [x] Peer dependencies specified
-
----
-
-## 🎯 FINAL VERIFICATION STEPS
-
-1. **Reload demo.html in browser**
-2. **Check output matches expected patterns above**
-3. **Verify NO bugs from checklist appear**
-4. **Verify statistics are in expected range**
-5. **Check browser console for errors** (should be zero)
-6. **Test N3.js integration:**
-
-```javascript
-import { parseRDFa } from './index.js';
-import { DataFactory, Store } from 'n3';
-
-const html = document.documentElement.outerHTML;
-const quads = parseRDFa(html, { 
-  baseIRI: location.href,
-  dataFactory: DataFactory 
-});
-
-const store = new Store(quads);
-console.log('Store size:', store.size);
-
-// Query for Jane
-const jane = store.getQuads(
-  DataFactory.namedNode(location.href + '#jane'),
-  null, null
-);
-console.log('Quads about Jane:', jane.length);
+```ttl
+<http://schema.org/CreativeWork> rdf:type <http://schema.org/CreativeWork> .
 ```
 
-Expected: Store size = 37-40, Jane quads = 4-5
+### Status
+
+✅ Correct — Safe CURIE resolution works.
+
+### But missing feature
+
+You **do not validate safe CURIE brackets contextually**:
+
+* `[schema:CreativeWork]` is legal
+* `schema:CreativeWork` without brackets **would not be**, in `@about`
+
+Your parser currently treats both identically.
 
 ---
 
-## ✅ PRODUCTION READY WHEN:
+## 3. Language and datatype inheritance (mostly correct)
 
-- [ ] All 10 test cases show correct output
-- [ ] No bugs from "BUGS TO CHECK FOR" section
-- [ ] Statistics in expected range
-- [ ] N3.js integration test passes
-- [ ] Zero console errors
-- [ ] Output matches expected patterns exactly
+### Verified correct
 
-**If all boxes checked: READY FOR NPM! 🎉**
+* `@lang` literals (Test 6)
+* `@datatype` + `@content` (Test 5)
+* Default string datatype suppression
+
+### Minor deviation
+
+Language **should not attach to typed literals**, but your formatter allows both paths. Ensure:
+
+* If `@datatype` is present → ignore `@lang`
 
 ---
 
-## 📝 POST-PUBLICATION TODO
+## 4. `@about=""` document IRI handling (Test 9)
 
-- [ ] Publish to npm as `rdfa-browser@1.0.0`
-- [ ] Add LICENSE file (MIT)
-- [ ] Create GitHub repository
-- [ ] Add TypeScript definitions (.d.ts)
-- [ ] Set up automated testing (GitHub Actions)
-- [ ] Performance benchmarks
-- [ ] W3C RDFa test suite integration
-- [ ] Browser compatibility matrix
-- [ ] JSR.io publication (Deno/Bun)
+### Output
+
+```ttl
+<demo.html> dc:modified "2025-01-15"^^xsd:date .
+```
+
+### Status
+
+✅ Correct
+
+### Edge case missing
+
+If both `@about=""` and `<base>` exist, base **must win**. No base resolution precedence logic is visible.
+
+---
+
+## 5. `@rev` handling (Test 4)
+
+### Demo
+
+```html
+<a rev="foaf:knows" href="#alice">Alice</a>
+```
+
+### Output
+
+```ttl
+<demo.html#alice> foaf:knows <demo.html#jane> .
+```
+
+### Status
+
+✅ Correct
+
+### Missing feature
+
+No support for **multiple `rev` values** (space-separated), which RDFa allows.
+
+---
+
+## 6. CURIE vs vocab resolution (Test 14)
+
+### Output
+
+```ttl
+#term-test name "Plain Term"
+#term-test dc:title "CURIE Term"
+```
+
+### Status
+
+✅ Correct
+
+### Missing feature
+
+You do **not lock `vocab` precedence**:
+
+* `property="dc:title"` must ignore vocab
+* Your code currently resolves by string inspection, not precedence rules
+
+---
+
+## 7. Incomplete triple chaining (Test 10)
+
+### Output
+
+```ttl
+:jane foaf:knows _:b1 .
+_:b1 rdf:type Person .
+_:b1 name "Bob" .
+
+:jane foaf:knows _:b2 .
+_:b2 rdf:type Person .
+_:b2 name "Carol" .
+```
+
+### Status
+
+✅ Correct
+
+### But…
+
+This works only because `<li>` directly contains `typeof`.
+**Same mechanism fails in Test 13** → confirms missing pending-object reuse logic.
+
+---
+
+## 8. Global RDFa features missing entirely
+
+Your parser does **not** implement:
+
+1. `@inlist` (RDF Collections)
+2. `@property` + `@typeof` dual role on same element
+3. Chained `@resource` overriding `@href`
+4. Term definitions via `@profile`
+5. Multiple `typeof` CURIE expansion error handling
+6. RDFa Initial Context fallback
+7. Prefix redeclaration scoping (you treat all prefixes as global)
+
+---
+
+## 9. Summary of Required Fixes (Priority Order)
+
+### 🔴 Critical (breaks graph correctness)
+
+1. **Pending object reuse for `@rel` + descendant `@typeof`**
+2. Blank node identity preservation across nested relations
+
+### 🟠 Important (spec compliance)
+
+3. Proper `vocab` vs CURIE precedence
+4. Safe CURIE contextual validation
+5. `@datatype` overrides `@lang`
+6. Multiple `rel` / `rev` values
+
+### 🟡 Missing features
+
+7. `@inlist`
+8. Prefix scoping
+9. RDFa profile processing
+
+---
+
+## Final Diagnosis
+
+Your parser handles **simple RDFa well**, but breaks when RDFa’s **state machine** matters. The b3–b4 problem is not an ID bug — it is a **missing RDFa processing step**: *completion of incomplete triples*.
+
+Fixing that will automatically repair:
+
+* Test 13
+* Future deep graph chains
+* Several currently hidden edge cases
+
+If you want, I can:
+
+* Annotate `index.js` with the exact missing state transitions
+* Provide a minimal RDFa 1.1 processing algorithm tailored to your codebase
+* Produce expected TTL for each test as validation fixtures

@@ -251,7 +251,13 @@ export class RDFaParser {
       }
     } else if (attrs.typeof !== undefined) {
       // @typeof creates a typed resource
-      if (attrs.resource !== undefined) {
+      let reusesPendingObject = false;
+
+      // Check if parent has pending object - if so, reuse it
+      if (parent?.incomplete?.length > 0 && parent.incomplete[0]?.pendingObject) {
+        newSubject = parent.incomplete[0].pendingObject;
+        reusesPendingObject = true;
+      } else if (attrs.resource !== undefined) {
         const resolved = this.resolveIRI(attrs.resource, context.base);
         newSubject = resolved ? this.df.namedNode(resolved) : null;
       } else if (attrs.href !== undefined) {
@@ -265,29 +271,41 @@ export class RDFaParser {
       if (!newSubject) {
         newSubject = this.newBlankNode();
       }
+
+      // Mark on the context for later use
+      skipElement = skipElement || false; // Will be set in push to stack
     } else if (parent) {
-      // No @about or @typeof - establish subject from context
+      // No @about - establish subject from context
       if (!hasRDFa) {
         // No RDFa attributes - inherit parent subject
         newSubject = parent.currentSubject;
         skipElement = true;
-      } else if (attrs.resource !== undefined) {
-        const resolved = this.resolveIRI(attrs.resource, context.base);
-        newSubject = resolved ? this.df.namedNode(resolved) : null;
-      } else if (attrs.href !== undefined) {
-        const iri = this.resolveIRI(attrs.href, context.base);
-        newSubject = iri ? this.df.namedNode(iri) : null;
-      } else if (attrs.src !== undefined) {
-        const iri = this.resolveIRI(attrs.src, context.base);
-        newSubject = iri ? this.df.namedNode(iri) : null;
+      } else if (attrs.typeof !== undefined) {
+        // Element has @typeof - needs its own subject
+        // Check if parent has pending object to reuse
+        if (parent?.incomplete?.length > 0 && parent.incomplete[0]?.pendingObject) {
+          newSubject = parent.incomplete[0].pendingObject;
+        } else if (attrs.resource !== undefined) {
+          const resolved = this.resolveIRI(attrs.resource, context.base);
+          newSubject = resolved ? this.df.namedNode(resolved) : null;
+        } else if (attrs.href !== undefined) {
+          const iri = this.resolveIRI(attrs.href, context.base);
+          newSubject = iri ? this.df.namedNode(iri) : null;
+        } else if (attrs.src !== undefined) {
+          const iri = this.resolveIRI(attrs.src, context.base);
+          newSubject = iri ? this.df.namedNode(iri) : null;
+        }
+
+        // If still no subject, create a blank node
+        if (!newSubject) {
+          newSubject = this.newBlankNode();
+        }
       } else if (parent.currentObject) {
-        // Chaining - use parent's current object
+        // Chaining - use parent's current object as subject
         newSubject = parent.currentObject;
-      } else if (attrs.rel !== undefined || attrs.rev !== undefined) {
-        // @rel/@rev without object - create blank node
-        newSubject = this.newBlankNode();
       } else {
-        // Inherit parent's subject
+        // Default: inherit parent's subject
+        // Applies to @rel/@rev without explicit object and without @typeof
         newSubject = parent.currentSubject;
       }
     } else {
@@ -306,53 +324,89 @@ export class RDFaParser {
 
     // Step 7: Process @rel and @rev for IRI relationships
     let incomplete = [];
+    let pendingObject = null;
 
-    if ((attrs.rel !== undefined || attrs.rev !== undefined) && currentSubject) {
+    // Determine the subject for @rel/@rev incomplete triples
+    // If this element has both @rel and @typeof (with no explicit object), 
+    // the @rel relates FROM the parent, TO this typed element
+    let relSubject = currentSubject;
+    let relObject = null;  // Will be the explicit object if provided, or null for incomplete
+
+    if ((attrs.rel !== undefined || attrs.rev !== undefined) && relSubject) {
       // Determine the object for @rel/@rev
       if (attrs.resource !== undefined) {
         const resolved = this.resolveIRI(attrs.resource, context.base);
-        currentObject = resolved ? this.df.namedNode(resolved) : null;
+        relObject = resolved ? this.df.namedNode(resolved) : null;
       } else if (attrs.href !== undefined) {
         const iri = this.resolveIRI(attrs.href, context.base);
-        currentObject = iri ? this.df.namedNode(iri) : null;
+        relObject = iri ? this.df.namedNode(iri) : null;
       } else if (attrs.src !== undefined) {
         const iri = this.resolveIRI(attrs.src, context.base);
-        currentObject = iri ? this.df.namedNode(iri) : null;
+        relObject = iri ? this.df.namedNode(iri) : null;
       }
 
-      if (currentObject) {
+      // Special case: @rel + @typeof on same element with no explicit object
+      // The @rel should relate from parent to this typed element
+      if (relObject === null && attrs.typeof !== undefined && !attrs.resource && !attrs.href && !attrs.src && parent) {
+        relSubject = parent.currentSubject;
+        relObject = currentSubject;  // The typed element becomes the object
+      }
+
+      if (relObject) {
         // Complete triples immediately
         if (attrs.rel !== undefined) {
           const rels = this.parseList(attrs.rel, context, true);
-          rels.forEach(rel => this.emitQuad(currentSubject, rel, currentObject));
+          rels.forEach(rel => this.emitQuad(relSubject, rel, relObject));
         }
         if (attrs.rev !== undefined) {
           const revs = this.parseList(attrs.rev, context, true);
-          revs.forEach(rev => this.emitQuad(currentObject, rev, currentSubject));
+          revs.forEach(rev => this.emitQuad(relObject, rev, relSubject));
         }
+        currentObject = relObject;  // Update currentObject for potential chaining
       } else {
+        // No explicit object and not a @typeof case - create pending for descendants
+        pendingObject = this.newBlankNode();
+
         // Create incomplete triples to be completed by child elements
         if (attrs.rel !== undefined) {
           const rels = this.parseList(attrs.rel, context, true);
-          rels.forEach(rel => incomplete.push({ predicate: rel, direction: 'forward', subject: currentSubject }));
+          rels.forEach(rel => incomplete.push({ predicate: rel, direction: 'forward', subject: relSubject, pendingObject: pendingObject }));
         }
         if (attrs.rev !== undefined) {
           const revs = this.parseList(attrs.rev, context, true);
-          revs.forEach(rev => incomplete.push({ predicate: rev, direction: 'reverse', subject: currentSubject }));
+          revs.forEach(rev => incomplete.push({ predicate: rev, direction: 'reverse', subject: relSubject, pendingObject: pendingObject }));
         }
       }
     }
 
     // Step 8: Complete parent's incomplete triples with current newSubject
+    let reusesPendingObject = false;
+    if (attrs.typeof !== undefined && parent?.incomplete?.length > 0 && parent.incomplete[0]?.pendingObject) {
+      // This child reused the pending object - we should emit the incomplete triples NOW
+      reusesPendingObject = true;
+    }
+
     if (parent?.incomplete?.length > 0 && newSubject && !currentObject) {
       parent.incomplete.forEach(inc => {
+        // When child reuses pending object, use it; otherwise use the new subject
+        const object = reusesPendingObject ? inc.pendingObject : newSubject;
+
         if (inc.direction === 'forward') {
-          // Parent subject -> predicate -> new subject (child)
-          this.emitQuad(inc.subject, inc.predicate, newSubject);
+          // Parent subject -> predicate -> pending object (child)
+          this.emitQuad(inc.subject, inc.predicate, object);
         } else {
-          // New subject (child) -> predicate -> parent subject
-          this.emitQuad(newSubject, inc.predicate, inc.subject);
+          // Pending object (child) -> predicate -> parent subject
+          this.emitQuad(object, inc.predicate, inc.subject);
         }
+      });
+    }
+
+    // Step 8.5: Handle @property + @typeof combination
+    // When an element has both @property and @typeof, emit property triples from parent to this typed element
+    if (attrs.property !== undefined && attrs.typeof !== undefined && parent && newSubject) {
+      const properties = this.parseList(attrs.property, context, true);
+      properties.forEach(prop => {
+        this.emitQuad(parent.currentSubject, prop, newSubject);
       });
     }
 
@@ -364,6 +418,8 @@ export class RDFaParser {
       newSubject,
       currentObject,
       incomplete,
+      pendingObject,
+      reusesPendingObject,
       skipElement,
       base: context.base,
       prefixes: context.prefixes,
@@ -380,7 +436,8 @@ export class RDFaParser {
     const { attrs, currentSubject, text, language, currentObject } = context;
 
     // Step 9: Process @property
-    if (attrs.property !== undefined && currentSubject) {
+    // Skip if @property + @typeof was already handled in onTagOpen (Step 8.5)
+    if (attrs.property !== undefined && currentSubject && !(attrs.typeof !== undefined)) {
       const properties = this.parseList(attrs.property, context, true); // Allow term resolution
       let object = null;
 
@@ -395,8 +452,8 @@ export class RDFaParser {
       } else if (attrs.src !== undefined) {
         const iri = this.resolveIRI(attrs.src, context.base);
         object = iri ? this.df.namedNode(iri) : null;
-      } else if (currentObject && attrs.typeof !== undefined) {
-        // When @property and @typeof are together, property points to typed resource
+      } else if (currentObject) {
+        // Use the currentObject from @rel/@rev in same element
         object = currentObject;
       } else {
         // Literal value
