@@ -376,9 +376,11 @@ export class RDFaParser {
     }
 
     // Complete parent's incomplete triples
-    // Search up the stack for any incomplete triples (not just immediate parent)
-    // This handles cases where @inlist elements have nested children
-    if (newSubject) {
+    // Only complete if this element establishes a new resource (not just inheriting parent's subject)
+    const hasExplicitResource = attrs.about !== undefined || attrs.typeof !== undefined ||
+      attrs.resource !== undefined || attrs.href !== undefined || attrs.src !== undefined;
+
+    if (newSubject && hasExplicitResource) {
       // Only complete if this element doesn't have its own explicit object
       const shouldComplete = !currentObject || (attrs.typeof !== undefined);
 
@@ -420,7 +422,9 @@ export class RDFaParser {
     }
 
     // Handle @property + @typeof combination - emit property from parent to this typed resource
-    if (attrs.property !== undefined && attrs.typeof !== undefined && parent && newSubject) {
+    // Only process if parent has an incomplete triple that needs this property to complete it
+    let propertyProcessedFromParent = false;
+    if (attrs.property !== undefined && attrs.typeof !== undefined && parent && newSubject && parent.incomplete?.length > 0) {
       const properties = this.parseList(attrs.property, context, true);
 
       // Check if property should be literal (has content/datatype) or resource
@@ -428,16 +432,16 @@ export class RDFaParser {
       const hasResourceIndicators = attrs.resource !== undefined || attrs.href !== undefined || attrs.src !== undefined;
 
       if (!hasLiteralIndicators && !hasResourceIndicators) {
-        // Property points to the typed resource
-        properties.forEach(prop => {
-          if (inlist) {
-            this.addToList(parent.currentSubject, prop, newSubject);
-          } else {
-            this.emitQuad(parent.currentSubject, prop, newSubject);
-          }
-        });
+        // Only emit if parent's incomplete triple actually matches this property structure
+        // Check if parent's incomplete has the right predicate
+        const parentInc = parent.incomplete[0];
+        const properties2 = this.parseList(attrs.property, context, true);
+        if (parentInc && properties2.length > 0 && parentInc.predicate.value === properties2[0].value) {
+          // This property will complete the parent's incomplete triple
+          propertyProcessedFromParent = true;
+          // Don't emit here; let the incomplete triple completion logic handle it
+        }
       }
-      // Otherwise, property will be processed in onTagClose as a literal
     }
 
     this.stack.push({
@@ -454,7 +458,8 @@ export class RDFaParser {
       prefixes: context.prefixes,
       vocab: context.vocab,
       language: context.language,
-      text: ''
+      text: '',
+      propertyProcessedFromParent
     });
   }
 
@@ -568,6 +573,15 @@ export class RDFaParser {
   }
 
   onText(text) {
+    // Search from current context backwards to find nearest @property context
+    // This allows nested elements to contribute text to parent properties
+    for (let i = this.stack.length - 1; i >= 0; i--) {
+      if (this.stack[i].attrs.property !== undefined) {
+        this.stack[i].text += text;
+        return;
+      }
+    }
+    // If no @property ancestor, add to current context
     const current = this.stack[this.stack.length - 1];
     if (current) {
       current.text += text;

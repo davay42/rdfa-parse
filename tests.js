@@ -261,6 +261,132 @@ test('@property + @typeof on same element', () => {
   assert(knowsQuad && knowsQuad.object.termType === 'BlankNode', 'Knows points to blank node');
 });
 
+test('@property with @href uses text content, not href', () => {
+  const html = '<div about="http://example.org/person" property="http://xmlns.com/foaf/0.1/email"><a href="mailto:alice@example.org">alice@example.org</a></div>';
+  const quads = parseRDFa(html, { baseIRI: 'http://example.org/' });
+
+  assert(quads.length === 1, 'Should have 1 quad');
+  assert(quads[0].object.value === 'alice@example.org', 'Uses text content, not href value');
+  assert(quads[0].object.termType === 'Literal', 'Object is literal, not IRI');
+});
+
+test('Multiple @property on same element', () => {
+  const html = '<div about="http://example.org/book"><span property="http://purl.org/dc/terms/title">Title</span><span property="http://purl.org/dc/terms/description">Desc</span></div>';
+  const quads = parseRDFa(html, { baseIRI: 'http://example.org/' });
+
+  assert(quads.length === 2, 'Should have 2 quads');
+  assert(findQuad(quads, 'http://example.org/book', 'http://purl.org/dc/terms/title', 'Title'), 'First property');
+  assert(findQuad(quads, 'http://example.org/book', 'http://purl.org/dc/terms/description', 'Desc'), 'Second property');
+});
+
+test('@property with @resource uses resource, not text', () => {
+  const html = '<div about="http://example.org/thing" property="http://xmlns.com/foaf/0.1/page" resource="http://example.org/page">Ignored Text</div>';
+  const quads = parseRDFa(html, { baseIRI: 'http://example.org/' });
+
+  assert(quads.length === 1, 'Should have 1 quad');
+  assert(quads[0].object.value === 'http://example.org/page', 'Uses resource value');
+  assert(quads[0].object.termType === 'NamedNode', 'Object is NamedNode, not literal');
+});
+
+test('Nested @vocab override', () => {
+  const html = `
+    <div vocab="http://schema.org/">
+      <div about="http://example.org/person" property="name">Alice</div>
+      <div vocab="http://xmlns.com/foaf/0.1/" property="name">Bob</div>
+    </div>
+  `;
+  const quads = parseRDFa(html, { baseIRI: 'http://example.org/' });
+
+  assert(quads.length === 2, 'Should have 2 quads');
+  const schema = findQuad(quads, 'http://example.org/person', 'http://schema.org/name', 'Alice');
+  assert(schema !== undefined, 'First uses schema.org vocab');
+});
+
+test('Language tag inheritance', () => {
+  const html = '<div lang="en"><span about="http://example.org/thing" property="http://purl.org/dc/terms/title">English</span></div>';
+  const quads = parseRDFa(html, { baseIRI: 'http://example.org/' });
+
+  assert(quads.length === 1, 'Should have 1 quad');
+  assert(quads[0].object.language === 'en', 'Language inherited from parent');
+});
+
+test('@property without explicit @about uses parent subject', () => {
+  const html = '<div about="http://example.org/person"><span property="http://xmlns.com/foaf/0.1/name">John</span></div>';
+  const quads = parseRDFa(html, { baseIRI: 'http://example.org/' });
+
+  assert(quads.length === 1, 'Should have 1 quad');
+  assert(quads[0].subject.value === 'http://example.org/person', 'Inherits parent subject');
+});
+
+test('@rel with incomplete triple and @typeof completion', () => {
+  const html = `
+    <div about="http://example.org/person" rel="http://xmlns.com/foaf/0.1/knows">
+      <div typeof="http://xmlns.com/foaf/0.1/Person" property="http://xmlns.com/foaf/0.1/name">Alice</div>
+    </div>
+  `;
+  const quads = parseRDFa(html, { baseIRI: 'http://example.org/' });
+
+  assert(quads.length === 3, `Should have 3 quads, got ${quads.length}`);
+  const relQuad = findQuad(quads, 'http://example.org/person', 'http://xmlns.com/foaf/0.1/knows', null);
+  assert(relQuad && relQuad.object.termType === 'BlankNode', 'Rel completes with blank node');
+  const typeQuad = findQuad(quads, null, 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type', 'http://xmlns.com/foaf/0.1/Person');
+  assert(relQuad.object.value === typeQuad.subject.value, 'Type applied to completed object');
+});
+
+test('@datatype="" creates untyped literal', () => {
+  const html = '<div about="http://example.org/thing" property="http://purl.org/dc/terms/value" datatype="">42</div>';
+  const quads = parseRDFa(html, { baseIRI: 'http://example.org/' });
+
+  assert(quads.length === 1, 'Should have 1 quad');
+  assert(quads[0].object.datatype.value === 'http://www.w3.org/2001/XMLSchema#string', 'Empty datatype creates string literal');
+});
+
+test('@inlist with nested intermediate elements', () => {
+  const html = `
+    <div about="http://example.org/list" rel="http://example.org/items" inlist="">
+      <ul>
+        <li><span about="http://example.org/item1"></span></li>
+        <li><span about="http://example.org/item2"></span></li>
+        <li><span about="http://example.org/item3"></span></li>
+      </ul>
+    </div>
+  `;
+  const quads = parseRDFa(html, { baseIRI: 'http://example.org/' });
+
+  const rdfFirst = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#first';
+  const firstQuads = countQuads(quads, null, rdfFirst, null);
+  assert(firstQuads === 3, `Should have 3 rdf:first for 3 items, got ${firstQuads}`);
+});
+
+test('Empty @property element creates empty literal', () => {
+  const html = '<div about="http://example.org/thing" property="http://purl.org/dc/terms/note"></div>';
+  const quads = parseRDFa(html, { baseIRI: 'http://example.org/' });
+
+  assert(quads.length === 0, 'Empty property with no content or text creates no quad');
+});
+
+test('@rev with incomplete triple', () => {
+  const html = `
+    <div about="http://example.org/author" rev="http://purl.org/dc/terms/creator">
+      <div about="http://example.org/book"></div>
+    </div>
+  `;
+  const quads = parseRDFa(html, { baseIRI: 'http://example.org/' });
+
+  assert(quads.length === 1, 'Should have 1 quad from rev');
+  assert(quads[0].subject.value === 'http://example.org/book', 'Rev reverses: book is subject');
+  assert(quads[0].object.value === 'http://example.org/author', 'Rev reverses: author is object');
+});
+
+test('Multiple prefixes in @prefix', () => {
+  const html = '<div prefix="dc: http://purl.org/dc/terms/ foaf: http://xmlns.com/foaf/0.1/" about="http://example.org/thing"><span property="dc:title">Title</span><span property="foaf:name">Name</span></div>';
+  const quads = parseRDFa(html, { baseIRI: 'http://example.org/' });
+
+  assert(quads.length === 2, 'Should have 2 quads');
+  assert(findQuad(quads, null, 'http://purl.org/dc/terms/title', 'Title'), 'dc: prefix resolved');
+  assert(findQuad(quads, null, 'http://xmlns.com/foaf/0.1/name', 'Name'), 'foaf: prefix resolved');
+});
+
 // Run tests
 async function runTests() {
   console.log('Running RDFa Parser Tests...\n');
