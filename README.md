@@ -1,4 +1,4 @@
-# rdfa-browser
+# rdfa-parse
 
 A lightweight, browser-native RDFa 1.1 Core parser optimized for web-workers and modern web applications. Zero Node.js dependencies, full spec compliance, N3.js compatible output.
 
@@ -14,7 +14,7 @@ A lightweight, browser-native RDFa 1.1 Core parser optimized for web-workers and
 ## Installation
 
 ```bash
-npm install rdfa-browser n3
+npm install rdfa-parse n3
 ```
 
 ## Usage
@@ -22,7 +22,7 @@ npm install rdfa-browser n3
 ### Basic Parsing with N3.js Store
 
 ```javascript
-import { parseRDFa } from 'rdfa-browser';
+import { parseRDFa } from 'rdfa-parse';
 import { DataFactory, Store } from 'n3';
 
 const html = `
@@ -51,7 +51,7 @@ The parser is **100% compatible** with N3.js when using N3's DataFactory:
 
 ```javascript
 import { DataFactory } from 'n3';
-import { parseRDFa } from 'rdfa-browser';
+import { parseRDFa } from 'rdfa-parse';
 
 // Use N3's DataFactory for full compatibility
 const quads = parseRDFa(html, { dataFactory: DataFactory });
@@ -70,7 +70,7 @@ The built-in DataFactory produces RDFJS-compliant quads that work with N3.js, bu
 ### Complete Example: Parse HTML File into Store
 
 ```javascript
-import { parseRDFa } from 'rdfa-browser';
+import { parseRDFa } from 'rdfa-parse';
 import { DataFactory, Store } from 'n3';
 
 // Fetch HTML file with RDFa
@@ -99,7 +99,7 @@ console.log(`Found ${people.length} people`);
 
 ```javascript
 // worker.js
-import { RDFaParser } from 'rdfa-browser';
+import { RDFaParser } from 'rdfa-parse';
 import { DataFactory, Store, Writer } from 'n3';
 
 self.onmessage = async (e) => {
@@ -273,11 +273,3 @@ try {
   // Handle parsing errors
 }
 ```
-
-## License
-
-MIT
-
-## Contributing
-
-Issues and PRs welcome at https://github.com/yourusername/rdfa-browser
