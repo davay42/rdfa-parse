@@ -1,7 +1,7 @@
 import { parseRDFa } from './index.js';
 
-const tests = [];
-const results = { passed: 0, failed: 0, total: 0 };
+export const tests = [];
+export const results = { passed: 0, failed: 0, total: 0 };
 
 function test(name, fn) {
   tests.push({ name, fn });
@@ -586,29 +586,60 @@ test('xml:base attribute changes base resolution', () => {
   assert(quads[0].subject.value === 'http://newbase.org/path/doc', 'xml:base changes base for relative IRIs');
 });
 
-// Run tests
-async function runTests() {
-  console.log('Running RDFa Parser Tests...\n');
+// Test runner - works in both Node.js and browser
+export async function runTests(options = {}) {
+  const { silent = false, onResult = null } = options;
+  
+  // Reset results for fresh run
+  results.passed = 0;
+  results.failed = 0;
+  results.total = 0;
+  const testResults = [];
+
+  if (!silent) {
+    console.log('Running RDFa Parser Tests...\n');
+  }
 
   for (const { name, fn } of tests) {
     results.total++;
+    const result = { name, passed: false, error: null };
+    
     try {
       fn();
       results.passed++;
-      console.log(`✓ ${name}`);
+      result.passed = true;
+      if (!silent) console.log(`✓ ${name}`);
     } catch (error) {
       results.failed++;
-      console.log(`✗ ${name}`);
-      console.log(`  Error: ${error.message}`);
+      result.error = error.message;
+      if (!silent) {
+        console.log(`✗ ${name}`);
+        console.log(`  Error: ${error.message}`);
+      }
+    }
+    
+    if (onResult) {
+      onResult(result);
+    }
+    testResults.push(result);
+  }
+
+  if (!silent) {
+    console.log(`\n${results.passed}/${results.total} tests passed`);
+    if (results.failed > 0) {
+      console.log(`${results.failed} tests failed`);
     }
   }
 
-  console.log(`\n${results.passed}/${results.total} tests passed`);
-
-  if (results.failed > 0) {
-    console.log(`${results.failed} tests failed`);
+  // Only exit in Node.js environment
+  if (typeof process !== 'undefined' && process.exit && results.failed > 0) {
     process.exit(1);
   }
+
+  return { results, testResults };
 }
 
-runTests();
+// Auto-run in Node.js environment
+if (typeof window === 'undefined' && typeof process !== 'undefined') {
+  runTests();
+}

@@ -5,10 +5,11 @@
   "type": "module",
   "main": "index.js",
   "exports": {
-    ".": "./index.js"
+    ".": "./index.js",
+    "./tests": "./tests.js"
   },
   "files": [
-    "index.js"
+    "index.js", "tests.js"
   ],
   "keywords": [
     "rdfa",

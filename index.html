@@ -260,28 +260,12 @@
       </div>
 
       <div class="section">
-        <h2>W3C RDFa 1.1 Features Tested</h2>
-        <ul style="font-size: 13px; line-height: 2; list-style-position: inside;">
-          <li>✓ <code>@about</code> - Subject IRIs</li>
-          <li>✓ <code>@typeof</code> - RDF types</li>
-          <li>✓ <code>@property</code> - Literal properties</li>
-          <li>✓ <code>@rel</code> / <code>@rev</code> - Relationships</li>
-          <li>✓ <code>@resource</code> / <code>@href</code> / <code>@src</code> - Objects</li>
-          <li>✓ <code>@vocab</code> - Default vocabulary</li>
-          <li>✓ <code>@prefix</code> - CURIE mappings</li>
-          <li>✓ <code>@content</code> - Explicit literal values</li>
-          <li>✓ <code>@datatype</code> - Typed literals</li>
-          <li>✓ <code>@lang</code> - Language tags</li>
-          <li>✓ <code>@inlist</code> - RDF collections</li>
-          <li>✓ Safe CURIEs <code>[prefix:term]</code></li>
-          <li>✓ Blank nodes <code>_:id</code></li>
-          <li>✓ <code>&lt;base&gt;</code> tag support</li>
-          <li>✓ <code>xml:base</code> attribute</li>
-          <li>✓ <code>&lt;time&gt;</code> implicit xsd:dateTime</li>
-          <li>✓ Multiple types (space-separated)</li>
-          <li>✓ Subject chaining</li>
-          <li>✓ Incomplete triple completion</li>
-          <li>✓ Empty <code>@about=""</code> for document</li>
+        <h2>Test Results</h2>
+        <div style="margin-bottom: 12px; font-size: 13px; color: #666;">
+          <span id="test-status">Running tests...</span>
+        </div>
+        <ul id="test-list" style="font-size: 13px; line-height: 2; list-style-position: inside;">
+          <!-- Tests loaded here -->
         </ul>
       </div>
     </div>
@@ -298,6 +282,7 @@
 
   <script type="module">
     import { parseRDFa } from 'rdfa-parse';
+    import { tests, runTests } from './tests.js';
 
     function escapeHtml(text) {
       const div = document.createElement('div');
@@ -379,10 +364,47 @@
       }
     }
 
+    async function loadAndRunTests() {
+      const testList = document.getElementById('test-list');
+      const testStatus = document.getElementById('test-status');
+
+      try {
+        // Run tests in silent mode with result callback
+        const { results, testResults } = await runTests({
+          silent: true,
+          onResult: (result) => {
+            const li = document.createElement('li');
+            const icon = result.passed ? '✓' : '✗';
+            const color = result.passed ? '#2ecc71' : '#e74c3c';
+            li.innerHTML = `<span style="color: ${color}; font-weight: bold;">${icon}</span> ${escapeHtml(result.name)}`;
+            testList.appendChild(li);
+          }
+        });
+
+        // Update status
+        const statusText = results.failed === 0
+          ? `${results.passed}/${results.total} tests passed`
+          : `${results.passed}/${results.total} tests passed, ${results.failed} failed`;
+        testStatus.textContent = statusText;
+        testStatus.style.color = results.failed === 0 ? '#27ae60' : '#e74c3c';
+
+      } catch (error) {
+        console.error('Test runner error:', error);
+        testStatus.textContent = '❌ Error running tests';
+        testStatus.style.color = '#e74c3c';
+      }
+    }
+
     if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', extractAndDisplay);
+      document.addEventListener('DOMContentLoaded', () => {
+        extractAndDisplay();
+        loadAndRunTests();
+      });
     } else {
-      setTimeout(extractAndDisplay, 50);
+      setTimeout(() => {
+        extractAndDisplay();
+        loadAndRunTests();
+      }, 50);
     }
   </script>
 </body>
