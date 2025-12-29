@@ -30,18 +30,6 @@ jobs:
           node-version: 22
           registry-url: https://registry.npmjs.org/
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
-
-      - name: Build JS
-        run: pnpm run lib
-
-      - name: Build HTML
-        run: pnpm run build
-
       - name: Create Release Draft
         id: create_release
         uses: actions/create-release@v1
