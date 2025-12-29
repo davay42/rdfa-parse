@@ -299,14 +299,15 @@
   {
     "imports": {
       "htmlparser2": "https://cdn.jsdelivr.net/npm/htmlparser2@10.0.0/+esm",
-      "rdfa-parse": "./index.js"
+      "rdfa-parse": "https://cdn.jsdelivr.net/npm/rdfa-parse@1.0.1/+esm",
+      "rdfa-parse/tests": "https://cdn.jsdelivr.net/npm/rdfa-parse@1.0.1/tests.js"
     }
   }
   </script>
 
   <script type="module">
     import { parseRDFa } from 'rdfa-parse';
-    import { tests, runTests } from './tests.js';
+    import { tests, runTests } from 'rdfa-parse/tests';
 
     function escapeHtml(text) {
       const div = document.createElement('div');
