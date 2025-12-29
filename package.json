@@ -9,8 +9,12 @@
     "./tests": "./tests.js"
   },
   "files": [
-    "index.js", "tests.js"
+    "index.js",
+    "tests.js"
   ],
+  "scripts": {
+    "test": "node tests.js"
+  },
   "keywords": [
     "rdfa",
     "rdf",
@@ -34,7 +38,7 @@
     "type": "git",
     "url": "https://github.com/davay42/rdfa-parse.git"
   },
-  "homepage": "https://github.com/davay42/rdfa-parse#readme",
+  "homepage": "https://davay42.github.io/rdfa-parse/",
   "bugs": {
     "url": "https://github.com/davay42/rdfa-parse/issues"
   }

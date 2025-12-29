@@ -589,7 +589,7 @@ test('xml:base attribute changes base resolution', () => {
 // Test runner - works in both Node.js and browser
 export async function runTests(options = {}) {
   const { silent = false, onResult = null } = options;
-  
+
   // Reset results for fresh run
   results.passed = 0;
   results.failed = 0;
@@ -603,7 +603,7 @@ export async function runTests(options = {}) {
   for (const { name, fn } of tests) {
     results.total++;
     const result = { name, passed: false, error: null };
-    
+
     try {
       fn();
       results.passed++;
@@ -617,7 +617,7 @@ export async function runTests(options = {}) {
         console.log(`  Error: ${error.message}`);
       }
     }
-    
+
     if (onResult) {
       onResult(result);
     }

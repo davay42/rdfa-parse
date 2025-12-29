@@ -11,6 +11,16 @@ A lightweight, browser-native RDFa 1.1 Core parser optimized for web-workers and
 - 🎯 **Lightweight** - Clean ESM code under 500 lines
 - 🧩 **All RDFa features** - CURIEs, terms, vocabulary expansion, chaining, typed literals
 
+## Demo
+
+**Interactive demo with live test results:** Open [index.html](index.html) in a browser to see:
+- RDFa parsing in action on 14 comprehensive test cases
+- Real-time test execution showing ✓/✗ results
+- Extracted RDF quads in turtle-like format
+- Parse statistics (time, quads, subjects, predicates)
+
+The demo page includes all major RDFa features and uses the actual test suite, so all green checkmarks are verified passes against the spec.
+
 ## Installation
 
 ```bash
