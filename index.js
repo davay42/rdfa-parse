@@ -27,7 +27,8 @@ const DEFAULT_PREFIXES = {
   void: 'http://rdfs.org/ns/void#',
   xhv: 'http://www.w3.org/1999/xhtml/vocab#',
   xml: 'http://www.w3.org/XML/1998/namespace',
-  xsd: 'http://www.w3.org/2001/XMLSchema#'
+  xsd: 'http://www.w3.org/2001/XMLSchema#',
+  foaf: 'http://xmlns.com/foaf/0.1/'
 };
 
 export class RDFaParser {
@@ -65,9 +66,24 @@ export class RDFaParser {
   write(chunk) {
     if (!this.parser) {
       this.parser = new Parser({
-        onopentag: (name, attrs) => this.onTagOpen(name, attrs),
+        onopentag: (name, attrs) => {
+          // Capture raw tag for XMLLiteral
+          const current = this.stack[this.stack.length - 1];
+          if (current?.isXMLLiteral) {
+            const attrStr = Object.entries(attrs).map(([k, v]) => `${k}="${v}"`).join(' ');
+            current.rawHTML += attrStr.length > 0 ? `<${name} ${attrStr}>` : `<${name}>`;
+          }
+          this.onTagOpen(name, attrs);
+        },
         ontext: (text) => this.onText(text),
-        onclosetag: (name) => this.onTagClose(name),
+        onclosetag: (name) => {
+          // Capture closing tag for XMLLiteral
+          const current = this.stack[this.stack.length - 1];
+          if (current?.isXMLLiteral) {
+            current.rawHTML += `</${name}>`;
+          }
+          this.onTagClose(name);
+        },
         onerror: (err) => this.emit('error', err)
       }, { decodeEntities: true, lowerCaseTags: true, lowerCaseAttributeNames: true });
     }
@@ -263,6 +279,9 @@ export class RDFaParser {
     const isTimeTag = name === 'time';
     const implicitTimeDatatype = isTimeTag && attrs.datatype === undefined;
 
+    // Check if this is an XMLLiteral element
+    const isXMLLiteral = attrs.datatype !== undefined && attrs.datatype.includes('XMLLiteral');
+
     let newSubject = null;
     let currentObject = null;
     let typedResource = null;
@@ -391,7 +410,12 @@ export class RDFaParser {
           }
         });
       } else {
+        // No explicit object - create a blank node that will be used for child properties
+        // and can be completed by child @about/@typeof
         const pendingObject = this.newBlankNode();
+        currentObject = pendingObject;  // Set as currentObject so children inherit it
+
+        // Create incomplete triples for completion by child @about/@typeof
         rels.forEach(rel => incomplete.push({ predicate: rel, direction: 'forward', subject: currentSubject, pendingObject, inlist }));
         revs.forEach(rev => incomplete.push({ predicate: rev, direction: 'reverse', subject: currentSubject, pendingObject, inlist }));
       }
@@ -403,42 +427,35 @@ export class RDFaParser {
       attrs.resource !== undefined || attrs.href !== undefined || attrs.src !== undefined;
 
     if (newSubject && hasExplicitResource) {
-      // Only complete if this element doesn't have its own explicit object
-      const shouldComplete = !currentObject || (attrs.typeof !== undefined);
+      // Search up the stack to find incomplete triples from any ancestor
+      for (let i = this.stack.length - 1; i >= 0; i--) {
+        const ancestorContext = this.stack[i];
+        if (ancestorContext?.incomplete?.length > 0) {
+          ancestorContext.incomplete.forEach(inc => {
+            const isListItem = inc.inlist;
+            const shouldComplete = isListItem || !inc.completed;
 
-      if (shouldComplete) {
-        // Search up the stack to find incomplete triples
-        for (let i = this.stack.length - 1; i >= 0; i--) {
-          const ancestorContext = this.stack[i];
-          if (ancestorContext?.incomplete?.length > 0) {
-            ancestorContext.incomplete.forEach(inc => {
-              // For @inlist, allow multiple completions (one per child in sequence)
-              // For regular rels, only complete once
-              const isListItem = inc.inlist;
-              const shouldCompleteThis = isListItem || !inc.completed;
+            if (shouldComplete) {
+              if (!isListItem) {
+                inc.completed = true;
+              }
+              const object = newSubject;
 
-              if (shouldCompleteThis) {
-                if (!isListItem) {
-                  inc.completed = true;
-                }
-                const object = newSubject;
-
-                if (inc.direction === 'forward') {
-                  if (inc.inlist) {
-                    this.addToList(inc.subject, inc.predicate, object);
-                  } else {
-                    this.emitQuad(inc.subject, inc.predicate, object);
-                  }
+              if (inc.direction === 'forward') {
+                if (inc.inlist) {
+                  this.addToList(inc.subject, inc.predicate, object);
                 } else {
-                  if (inc.inlist) {
-                    this.addToList(object, inc.predicate, inc.subject);
-                  } else {
-                    this.emitQuad(object, inc.predicate, inc.subject);
-                  }
+                  this.emitQuad(inc.subject, inc.predicate, object);
+                }
+              } else {
+                if (inc.inlist) {
+                  this.addToList(object, inc.predicate, inc.subject);
+                } else {
+                  this.emitQuad(object, inc.predicate, inc.subject);
                 }
               }
-            });
-          }
+            }
+          });
         }
       }
     }
@@ -475,14 +492,16 @@ export class RDFaParser {
       typedResource,
       incomplete,
       implicitTimeDatatype,
+      isXMLLiteral,
       inlist,
       base: context.base,
       prefixes: context.prefixes,
       vocab: context.vocab,
       language: context.language,
       text: '',
+      rawHTML: '',
       propertyProcessedFromParent,
-      propertyEmittedAsLink // <--- ADD THIS
+      propertyEmittedAsLink
     });
   }
 
@@ -531,7 +550,26 @@ export class RDFaParser {
     const context = this.stack.pop();
     if (!context || context.name !== name) return;
 
-    const { attrs, currentSubject, text, language, currentObject, implicitTimeDatatype, inlist } = context;
+    const { attrs, currentSubject, text, language, currentObject, implicitTimeDatatype, inlist, incomplete } = context;
+
+    // Emit any incomplete triples that weren't completed by children
+    // But NOT @inlist items - those should only emit if explicitly completed
+    if (incomplete && incomplete.length > 0) {
+      incomplete.forEach(inc => {
+        // Only emit if it hasn't been completed or emitted already
+        // And skip @inlist items - they should not emit with pendingObject
+        if (!inc.completed && !inc.emittedWithPending && !inc.inlist) {
+          inc.emittedWithPending = true;
+          const object = inc.pendingObject;
+
+          if (inc.direction === 'forward') {
+            this.emitQuad(inc.subject, inc.predicate, object);
+          } else {
+            this.emitQuad(object, inc.predicate, inc.subject);
+          }
+        }
+      });
+    }
 
     // Process @property
     if (attrs.property !== undefined && currentSubject) {
@@ -551,13 +589,16 @@ export class RDFaParser {
 
       if (attrs.resource !== undefined) {
         object = this.resolveResourceOrIRI(attrs.resource, context, false);
+      } else if (attrs.href !== undefined) {
+        const resolved = this.resolveIRI(attrs.href, context.base);
+        object = resolved ? this.df.namedNode(resolved) : null;
       } else if (attrs.src !== undefined) {
         const resolved = this.resolveIRI(attrs.src, context.base);
         object = resolved ? this.df.namedNode(resolved) : null;
       } else if (currentObject && !attrs.typeof) {
         object = currentObject;
       } else {
-        const content = attrs.content !== undefined ? attrs.content : text.trim();
+        const content = attrs.content !== undefined ? attrs.content : (context.isXMLLiteral ? context.rawHTML : text.trim());
 
         if (content === '' && attrs.content === undefined) {
           object = null;
@@ -601,6 +642,10 @@ export class RDFaParser {
     for (let i = this.stack.length - 1; i >= 0; i--) {
       if (this.stack[i].attrs.property !== undefined) {
         this.stack[i].text += text;
+        // Also capture for XMLLiteral
+        if (this.stack[i].isXMLLiteral) {
+          this.stack[i].rawHTML += text;
+        }
         return;
       }
     }
@@ -608,6 +653,9 @@ export class RDFaParser {
     const current = this.stack[this.stack.length - 1];
     if (current) {
       current.text += text;
+      if (current.isXMLLiteral) {
+        current.rawHTML += text;
+      }
     }
   }
 
